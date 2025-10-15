@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>สาร-สูตรคู่ใจ (ครบ 5 เลเวล)</title>
+<style>
+body{font-family:"Comic Sans MS",cursive;background:#FFF8E1;text-align:center;margin:0;padding:10px;box-sizing:border-box;}
+h1{color:#FF7043;text-shadow:2px 2px #999;font-size:2rem;margin-bottom:10px;}
+.top-bar{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:8px;margin-bottom:10px;}
+.info-box{padding:8px 12px;border:2px solid #000;border-radius:10px;background:#FFF;font-size:1rem;font-weight:bold;}
+#game-board{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:15px;padding:15px;max-width:1200px;margin:0 auto;}
+.card{position:relative;width:100%;min-height:120px;border-radius:18px;border:3px solid #000;font-weight:bold;cursor:pointer;box-shadow:3px 3px 0 #000;transition:transform .2s,box-shadow .2s;text-align:center;display:flex;flex-direction:column;justify-content:center;align-items:center;user-select:none;padding:8px;box-sizing:border-box;}
+.card:hover{transform:scale(1.05) rotate(-2deg);}
+.card.active{transform:scale(1.08) rotate(3deg);box-shadow:5px 5px 0 #000;}
+.card .name-thai{font-size:1rem;font-weight:bold;line-height:1.2;display:block;}
+.card .name-eng{font-size:0.85rem;color:#333;line-height:1.2;display:block;margin-top:2px;}
+.card .formula{font-size:1.2rem;font-weight:bold;margin-top:4px;}
+.fadeOut{animation:popFade 0.5s forwards;}
+@keyframes popFade{0%{transform:scale(1);opacity:1;}50%{transform:scale(1.4);opacity:0.8;}100%{transform:scale(0);opacity:0;}}
+.shake{animation:comicShake 0.36s;}
+@keyframes comicShake{0%{transform:translateX(0);}25%{transform:translateX(-6px);}50%{transform:translateX(6px);}75%{transform:translateX(-4px);}100%{transform:translateX(0);}}
+.overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);justify-content:center;align-items:center;z-index:1000;}
+.overlay .box{background:#FFFDE7;padding:25px;border-radius:16px;text-align:center;font-size:1.1rem;border:3px solid #000;box-shadow:5px 5px 0 #000;}
+.overlay h2{margin:0 0 10px 0;color:#FF7043;}
+.overlay p{margin:5px 0;}
+.overlay .pill{margin-top:15px;display:inline-block;background:#fff;padding:8px 12px;border-radius:10px;border:2px solid #000;}
+.overlay .btn-group{margin-top:15px;display:flex;gap:10px;justify-content:center;}
+.overlay .btn{padding:10px 18px;border:none;border-radius:10px;background:#FFB74D;cursor:pointer;font-weight:bold;border:2px solid #000;}
+.overlay .btn:hover{background:#FFA726;}
+.reset-btn{padding:8px 16px;border-radius:12px;border:2px solid #000;background:#FFB74D;cursor:pointer;font-weight:bold;transition:all 0.2s;margin-bottom:10px;}
+.reset-btn:hover{background:#FFA726;transform:scale(1.05);}
+@media (max-width:600px){.card{min-height:100px;}h1{font-size:1.8rem;}}
+</style>
+</head>
+<body>
+
+<h1>สาร-สูตรคู่ใจ</h1>
+<button class="reset-btn" onclick="resetGame()">รีเซ็ตเกม</button>
+
+<div class="top-bar">
+  <div class="info-box">เลเวล: <span id="level-label">1</span></div>
+  <div class="info-box">จับคู่ได้: <span id="score-label">0</span></div>
+  <div class="info-box">เวลา: <span id="timer-label">180</span></div>
+</div>
+
+<div id="game-board"></div>
+
+<div class="overlay" id="overlay">
+  <div class="box">
+    <h2 id="overlay-title">ยินดีด้วย!</h2>
+    <p id="overlay-msg">คุณทำคะแนนได้ 0 คะแนน</p>
+    <div class="pill" id="overlay-high">คะแนนสูงสุด (เลเวล 1): —</div>
+    <div class="btn-group" id="overlay-buttons">
+      <button class="btn" id="overlay-replay">เล่นอีกครั้ง</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ----------------- เสียง -----------------
+var audioCtx=null;
+function ensureAudioCtx(){if(!audioCtx){audioCtx=new (window.AudioContext||window.webkitAudioContext)();}}
+function playSound(frequency,duration,volume,type='sine'){ensureAudioCtx();var osc=audioCtx.createOscillator();var gain=audioCtx.createGain();osc.connect(gain);gain.connect(audioCtx.destination);osc.type=type;osc.frequency.value=frequency;gain.gain.value=volume;osc.start();osc.stop(audioCtx.currentTime+duration);}
+function soundClick(){playSound(600,0.05,0.1,'square');}
+function soundCorrect(){playSound(1000,0.15,0.15,'triangle');}
+function soundWrong(){playSound(180,0.2,0.15,'sawtooth');}
+function soundWin(){playSound(1200,0.3,0.2,'triangle');}
+function soundTimeUp(){playSound(300,0.25,0.2,'sine');}
+
+// ----------------- ตัวแปรหลัก -----------------
+var levelPairs=[10,15,20,25,30];
+var levelTime=[90,120,150,180,210];
+var substances=[
+{name:'น้ำ',nameEng:'Water',formula:'H₂O'}, {name:'โซเดียมคลอไรด์',nameEng:'Sodium Chloride',formula:'NaCl'},
+{name:'คาร์บอนไดออกไซด์',nameEng:'Carbon Dioxide',formula:'CO₂'}, {name:'มีเทน',nameEng:'Methane',formula:'CH₄'},
+{name:'แอมโมเนีย',nameEng:'Ammonia',formula:'NH₃'}, {name:'กลูโคส',nameEng:'Glucose',formula:'C₆H₁₂O₆'},
+{name:'กรดซัลฟิวริก',nameEng:'Sulfuric Acid',formula:'H₂SO₄'}, {name:'ออกซิเจน',nameEng:'Oxygen',formula:'O₂'},
+{name:'ไนโตรเจน',nameEng:'Nitrogen',formula:'N₂'}, {name:'เอทานอล',nameEng:'Ethanol',formula:'C₂H₅OH'},
+{name:'แคลเซียมคาร์บอเนต',nameEng:'Calcium Carbonate',formula:'CaCO₃'}, {name:'กรดไฮโดรคลอริก',nameEng:'Hydrochloric Acid',formula:'HCl'},
+{name:'โซเดียมไบคาร์บอเนต',nameEng:'Sodium Bicarbonate',formula:'NaHCO₃'}, {name:'กรดอะซิติก',nameEng:'Acetic Acid',formula:'CH₃COOH'},
+{name:'โพแทสเซียมไฮดรอกไซด์',nameEng:'Potassium Hydroxide',formula:'KOH'}, {name:'โซเดียมไฮดรอกไซด์',nameEng:'Sodium Hydroxide',formula:'NaOH'},
+{name:'แมกนีเซียมซัลเฟต',nameEng:'Magnesium Sulfate',formula:'MgSO₄'}, {name:'คอปเปอร์ซัลเฟต',nameEng:'Copper(II) Sulfate',formula:'CuSO₄'},
+{name:'เหล็ก(III)ออกไซด์',nameEng:'Iron(III) Oxide',formula:'Fe₂O₃'}, {name:'กรดไนตริก',nameEng:'Nitric Acid',formula:'HNO₃'},
+{name:'กรดฟอสฟอริก',nameEng:'Phosphoric Acid',formula:'H₃PO₄'}, {name:'โพแทสเซียมคลอไรด์',nameEng:'Potassium Chloride',formula:'KCl'},
+{name:'โพแทสเซียมไอโอไดด์',nameEng:'Potassium Iodide',formula:'KI'}, {name:'เบนซีน',nameEng:'Benzene',formula:'C₆H₆'},
+{name:'กรดซิตริก',nameEng:'Citric Acid',formula:'C₆H₈O₇'}, {name:'ไฮโดรเจนเปอร์ออกไซด์',nameEng:'Hydrogen Peroxide',formula:'H₂O₂'},
+{name:'โพแทสเซียมเปอร์แมงกาเนต',nameEng:'Potassium Permanganate',formula:'KMnO₄'}, {name:'ซูโครส',nameEng:'Sucrose',formula:'C₁₂H₂₂O₁₁'},
+{name:'โอโซน',nameEng:'Ozone',formula:'O₃'}, {name:'แคลเซียมซัลเฟต',nameEng:'Calcium Sulfate',formula:'CaSO₄'}
+];
+var cardColors=["#FF8A65","#4DD0E1","#AED581","#FFD54F","#BA68C8","#FFB74D","#7986CB","#9575CD","#F06292","#64B5F6"];
+var boardEl=document.getElementById('game-board');
+var levelLabel=document.getElementById('level-label');
+var scoreLabel=document.getElementById('score-label');
+var timerLabel=document.getElementById('timer-label');
+var overlay=document.getElementById('overlay');
+var overlayTitle=document.getElementById('overlay-title');
+var overlayMsg=document.getElementById('overlay-msg');
+var overlayHigh=document.getElementById('overlay-high');
+var overlayButtons=document.getElementById('overlay-buttons');
+var currentLevel=1,firstCard=null,secondCard=null,score=0,timer=0,timerInterval=null,isBoardLocked=false;
+
+// ----------------- ฟังก์ชัน -----------------
+function shuffle(arr){return arr.sort(()=>Math.random()-0.5);}
+
+function createBoard(){
+  boardEl.innerHTML='';firstCard=null;secondCard=null;score=0;isBoardLocked=false;
+  clearInterval(timerInterval);timerInterval=null;timer=levelTime[currentLevel-1];
+  levelLabel.textContent=currentLevel;scoreLabel.textContent=score;timerLabel.textContent=timer;
+  var numPairs=levelPairs[currentLevel-1];
+  var selected=shuffle([...substances]).slice(0,numPairs);
+  var cards=[];
+  selected.forEach((s,i)=>{
+    let color=cardColors[i%cardColors.length];
+    let nameHTML=`<span class='name-thai'>${s.name}</span><span class='name-eng'>${s.nameEng}</span>`;
+    let formulaHTML=`<span class='formula'>${s.formula}</span>`;
+    cards.push({key:s.formula,html:nameHTML,color:color});
+    cards.push({key:s.formula,html:formulaHTML,color:color});
+  });
+  shuffle(cards).forEach(c=>{
+    let el=document.createElement('div');
+    el.className='card';
+    el.dataset.key=c.key;
+    el.style.background=c.color;
+    el.innerHTML=c.html;
+    el.addEventListener('click',()=>handleCard(el));
+    boardEl.appendChild(el);
+  });
+}
+
+function startTimer(){
+  timerInterval=setInterval(()=>{
+    timer--;timerLabel.textContent=timer;
+    if(timer<=0){soundTimeUp();endGame(false);}
+  },1000);
+}
+
+function handleCard(card){
+  if(isBoardLocked||card===firstCard||card.classList.contains('matched'))return;
+  soundClick();
+  if(!timerInterval)startTimer();
+  card.classList.add('active');
+  if(!firstCard){firstCard=card;return;}
+  secondCard=card;isBoardLocked=true;
+  if(firstCard.dataset.key===secondCard.dataset.key){
+    soundCorrect();
+    setTimeout(()=>{
+      firstCard.classList.add('fadeOut','matched');
+      secondCard.classList.add('fadeOut','matched');
+      score++;scoreLabel.textContent=score;
+      resetTurn();
+      if(score===levelPairs[currentLevel-1]){soundWin();endGame(true);}
+    },400);
+  }else{
+    soundWrong();
+    firstCard.classList.add('shake');secondCard.classList.add('shake');
+    setTimeout(()=>{
+      firstCard.classList.remove('active','shake');
+      secondCard.classList.remove('active','shake');
+      resetTurn();
+    },800);
+  }
+}
+
+function resetTurn(){firstCard=null;secondCard=null;isBoardLocked=false;}
+
+function endGame(win){
+  clearInterval(timerInterval);timerInterval=null;
+  overlay.style.display='flex';
+  overlayButtons.innerHTML=''; // ล้างปุ่มเก่า
+  if(win){
+    if(currentLevel<5){
+      overlayTitle.textContent='🎉 ผ่านเลเวล '+currentLevel+' แล้ว! 🎉';
+      overlayMsg.textContent=`จับคู่ได้ครบ ${score}/${levelPairs[currentLevel-1]} คู่!`;
+      overlayButtons.innerHTML=`<button class='btn' id='next-btn'>ไปต่อเลเวล ${currentLevel+1}</button>`;
+      document.getElementById('next-btn').onclick=()=>{overlay.style.display='none';currentLevel++;createBoard();};
+    }else{
+      overlayTitle.textContent='🏆 เยี่ยมมาก! ผ่านครบทุกเลเวลแล้ว! 🏆';
+      overlayMsg.textContent=`คุณคือสุดยอดนักเคมี!`;
+      overlayButtons.innerHTML=`<button class='btn' id='restart-btn'>กลับไปเลเวล 1</button>`;
+      document.getElementById('restart-btn').onclick=()=>{overlay.style.display='none';currentLevel=1;createBoard();};
+    }
+  }else{
+    overlayTitle.textContent='⏰ หมดเวลา!';
+    overlayMsg.textContent=`จับคู่ได้ ${score}/${levelPairs[currentLevel-1]} คู่`;
+    overlayButtons.innerHTML=`<button class='btn' id='retry-btn'>เล่นอีกครั้ง</button>`;
+    document.getElementById('retry-btn').onclick=()=>{overlay.style.display='none';createBoard();};
+  }
+}
+
+// ----------------- รีเซ็ตเกม -----------------
+function resetGame(){
+  currentLevel=1;
+  createBoard();
+}
+
+createBoard();
+</script>
+</body>
+</html>
